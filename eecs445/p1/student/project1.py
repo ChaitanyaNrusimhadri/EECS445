@@ -113,10 +113,14 @@ def generate_feature_matrix(df, word_dict):
     number_of_words = len(word_dict)
     feature_matrix = np.zeros((number_of_reviews, number_of_words))
     # TODO: Implement this function
-    
+    row = 0
+    for text in df['content']:
+        output_list = extract_word(text)
+        for word in output_list:
+            if word in word_dict:
+                feature_matrix[row, word_dict[word]] = 1
+        row += 1
     return feature_matrix
-
-
 
 
 def performance(y_true, y_pred, metric="accuracy"):
@@ -138,6 +142,23 @@ def performance(y_true, y_pred, metric="accuracy"):
     # This is an optional but very useful function to implement.
     # See the sklearn.metrics documentation for pointers on how to implement
     # the requested metrics.
+    if metric == "auroc":
+        return metrics.roc_auc_score(y_true, y_pred)
+
+    m = metrics.confusion_matrix(y_true, y_pred)
+    tn, fp, fn, tp = m.ravel()
+    if metric == "accuracy":
+        return (tp+tn)/(tp+fn+fp+tn)
+    if metric == "precision":
+        return tp/(tp+fp)
+    if metric == "sensitivity":
+        return tp/(tp+fn)
+    if metric == "specificity":
+        return tn/(tn+fp)
+    if metric == "f1-score": # 2*prec*sens/prec+sens
+        prec = tp/(tp+fp)
+        sens = tp/(tp+fn)
+        return 2*prec*sens/(prec+sens)
 
 
 def cv_performance(clf, X, y, k=5, metric="accuracy"):
@@ -166,6 +187,18 @@ def cv_performance(clf, X, y, k=5, metric="accuracy"):
 
     # Put the performance of the model on each fold in the scores array
     scores = []
+    strat = StratifiedKFold(n_splits=k)
+    strat.get_n_splits(X,y)
+    for train_index, test_index in strat.split(X,y):
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y[train_index], y[test_index]
+        clf.fit(X_train, y_train)
+        y_pred = clf.predict(X_test)
+        if metric == "auroc": #use decision_function in auroc, not predict
+            y_pred = clf.decision_function(X_test)
+        score = performance(y_test, y_pred, metric)
+        scores.append(score) 
+
     return np.array(scores).mean()
 
 
@@ -199,6 +232,17 @@ def select_param_linear(
     # TODO: Implement this function
     # HINT: You should be using your cv_performance function here
     # to evaluate the performance of each SVM
+    maxc = 0
+    maxperf = 0
+    for c in C_range:
+        clf = LinearSVC(penalty = penalty, loss = loss, dual = True, c = c, random_state = 445)
+        #use performance instead of cv_performance for linear SVC
+        perf = cv_performance(clf, X, y, k = 5, metric = metric)
+        print(c, perf)
+        if perf > maxperf:
+            maxperf = perf
+            maxi = c
+    return maxi
 
 
 def plot_weight(X, y, penalty, C_range, loss, dual):
@@ -221,6 +265,18 @@ def plot_weight(X, y, penalty, C_range, loss, dual):
     # Here, for each value of c in C_range, you should
     # append to norm0 the L0-norm of the theta vector that is learned
     # when fitting an L2- or L1-penalty, degree=1 SVM to the data (X, y)
+
+    for c in C_range:
+        # clf = LinearSVC(penalty = penalty, loss = loss, dual = True, c = c, random_state = 445)
+        clf = LinearSVC(penalty = penalty, c = c)
+        clf.fit(X, y)
+        L0_norm = 0
+        for theta in clf.coef_:
+            for c in theta:
+                if c != 0:
+                    L0_norm += 1
+        norm0.append(L0_norm)
+
 
     plt.plot(C_range, norm0)
     plt.xscale("log")
@@ -259,8 +315,16 @@ def select_param_quadratic(X, y, k=5, metric="accuracy", param_range=[]):
     # Hint: This will be very similar to select_param_linear, except
     # the type of SVM model you are using will be different...
     best_C_val, best_r_val = 0.0, 0.0
+    maxperf = 0
+    for c, r in param_range:
+        clf = SVC(c = c, degree = 2, r = r) 
+        perf = cv_performance(clf, X, y, k = k, metric = metric)
+        print(c, r, perf)
+        if perf > maxperf:
+            best_C_val = c
+            best_r_val = r
+            maxperf = perf 
     return best_C_val, best_r_val
-
 
 
 
@@ -275,6 +339,7 @@ def main():
         dictionary_binary, fname="data/dataset.csv"
     )
 
+    #print(extract_word("This Is a tEsT Case. Let's see, if it. works!"))
 
     # TODO: Questions 3, 4, 5
 
