@@ -12,6 +12,7 @@ from sklearn.svm import SVC, LinearSVC
 from sklearn.model_selection import StratifiedKFold
 from sklearn import metrics
 from matplotlib import pyplot as plt
+from stack_data import RangeInLine
 
 
 from helper import *
@@ -320,7 +321,8 @@ def select_param_quadratic(X, y, k=5, metric="accuracy", param_range=[]):
     best_C_val, best_r_val = 0.0, 0.0
     maxperf = 0
     for c, r in param_range:
-        clf = SVC(kernel = 'poly', degree = 2, C = c,  coef0 = r, gamma = 'auto') 
+        clf = SVC(c = c, degree = 2, r = r)
+        #clf = SVC(kernel = 'poly', degree = 2, C = c,  coef0 = r, gamma = 'auto') 
         perf = cv_performance(clf, X, y, k = k, metric = metric)
         print(c, r, perf)
         if perf > maxperf:
@@ -352,7 +354,7 @@ def main():
     print('Avg number of non-zero features = ', np.sum(X_train)/len(X_train))
     #word appearing in greatest number of comments
 
-    #4.1
+    #4.1b
     metrics = ["accuracy", "precision", "sensitivity", "specificty", "f1-score", "auroc"]
     selected_C = 0
     C_range = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
@@ -363,9 +365,113 @@ def main():
         print("C = ", maxc, "is optimal under ", m, "metric, cv_performance = ", score)
         if m == "auroc":
             selected_C = maxc
+
+    #4.1c
+    #train performance on X_test and Y_Test
+    clf = LinearSVC(penalty = "l2", loss = "hinge", dual = True, C = selected_C)
+    Y_pred = clf.decision_function(X_test)
+    auroc_score = performance(Y_test, Y_pred, metric = 'auroc')
+    print("The C that maximizes AUROC is selected_C")
+    print("AUROC score: ", auroc_score)
+    Y_pred = clf.predict(X_test)
+    for m in metrics:
+        if m != "auroc":
+            score = performance(Y_test, Y_pred, metric = m)
+            print("The", m, "score is", score)
+
+    #4.1d 
+    plot_weight(X_train, Y_train, penalty = "l2", C_range = C_range)
+
+    #4.1e 
+    #bar coefficient vs each word, most pos and most neg, C = 0.1
+    clf = LinearSVC(C = 0.1)
+    clf.fit(X_train, Y_train)
+    arg = clf.coef_.argsort()
+    min_ind5 = arg[:5]
+    max_ind5 = arg[:-5:-1]
+    minwords = []
+    maxwords = []
+
+    for ind in min_ind5:
+        for word, index in dictionary_binary.items():
+            if index == ind:
+                minwords.append(word) 
+    print("Most negative words")
+    for i in range(5): #Return 5 most negative words
+        print(clf.coef_[min_ind5[i]], minwords[i])
+    
+    
+    for ind in max_ind5:
+        for word, index in dictionary_binary.items():
+            if index == ind: 
+                maxwords.append(word)
+    print("Most positive words")
+    for i in range(5): #Return 5 most positive words
+        print(clf.coef_[max_ind5[i]], maxwords[i])
     
     #4.2 
+    #Use squared hinge and l1, dual = false
     
+    #4.2a, reset maxc and maxperf
+    maxc = 0 
+    maxperf = 0 
+    for c in C_range: 
+        clf = LinearSVC(penalty = "l1", loss = "squared_hinge", C = c, dual = False)
+        y_pred = clf.decision_function(X_test)
+        perf = performance(Y_test, Y_pred, "auroc")
+        if perf > maxperf: 
+            maxc = c
+            maxperf = perf
+    print("C = ", maxc, "is the optimal solution")
+
+    #4.2b plot weight
+    plot_weight(X_train, Y_train, penalty = "l1", C_range = C_range)
+
+
+    #4.3a
+    #(i) Grid Search
+    r_range = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
+    cr_range = []
+    for c in C_range:
+        for r in r_range:
+            cr_range.append([c,r])
+    [maxc, maxr] = select_param_quadratic(X_train, Y_train, param_range = cr_range)
+    print("C = ", maxc, "r = ", maxr, "is part of the optimal solution")
+
+    #(ii) Random Search
+    import random
+    cr_range = []
+    for i in range(25):
+        #range of values (-10e2, 10e3) --> 36 pairs
+        lgc = random.uniform(-2, 3)
+        lgr = random.uniform(-2, 3)
+        cr_range.append([10**lgc, 10**lgr])
+    [maxc, maxr] = select_param_quadratic(X_train, Y_train, param_range = cr_range)
+    print("C = ", maxc, "r = ", maxr, "is the optimal solution")
+
+    #5.1c
+    clf = SVC(c = 0.01, class_weight = {-1: 1, 1: 10})
+    clf.fit(X_train, Y_train)
+    Y_pred = clf.decision_function(X_test)
+    perf = performance(Y_test, Y_pred, metric = "auroc")
+    print("AUROC score: ", perf)
+    Y_pred = clf.predict(X_test)
+    for m in metrics: 
+        if m != "auroc":
+            perf = performance(Y_test, Y_pred, metric = m)
+            print("Score: ", score)
+
+    #5.2a 
+    clf = SVC(c = 0.01, class_weight = 0.01)
+    clf.fit(IMB_features, IMB_labels)
+    Y_pred = clf.decision_function(IMB_test_features)
+    perf = performance(IMB_test_labels, Y_pred, metric = "auroc")
+    print("AUROC score: ", perf)
+    Y_pred = clf.predict(X_test)
+    for m in metrics:
+        if m != "auroc":
+            perf = performance(IMB_test_labels, Y_pred, metric = m)
+            print("Score: ", score)
 
     # Read multiclass data
     # TODO: Question 6: Apply a classifier to heldout features, and then use
