@@ -235,14 +235,17 @@ def select_param_linear(
     maxc = 0
     maxperf = 0
     for c in C_range:
-        clf = LinearSVC(penalty = penalty, loss = loss, dual = True, c = c, random_state = 445)
-        #use performance instead of cv_performance for linear SVC
+        #clf = LinearSVC(penalty = penalty, loss = loss, dual = True, c = c, random_state = 445)
+        clf = LinearSVC(penalty = penalty, c = c)
+        #use performance instead of cv_performance for linear SVC?
+        #-------------------------------------------------------------------------------------------------------------------
+        #-------------------------------------------------------------------------------------------------------------------
         perf = cv_performance(clf, X, y, k = 5, metric = metric)
         print(c, perf)
         if perf > maxperf:
             maxperf = perf
-            maxi = c
-    return maxi
+            maxc = c
+    return maxc
 
 
 def plot_weight(X, y, penalty, C_range, loss, dual):
@@ -317,7 +320,7 @@ def select_param_quadratic(X, y, k=5, metric="accuracy", param_range=[]):
     best_C_val, best_r_val = 0.0, 0.0
     maxperf = 0
     for c, r in param_range:
-        clf = SVC(c = c, degree = 2, r = r) 
+        clf = SVC(kernel = 'poly', degree = 2, C = c,  coef0 = r, gamma = 'auto') 
         perf = cv_performance(clf, X, y, k = k, metric = metric)
         print(c, r, perf)
         if perf > maxperf:
@@ -325,7 +328,6 @@ def select_param_quadratic(X, y, k=5, metric="accuracy", param_range=[]):
             best_r_val = r
             maxperf = perf 
     return best_C_val, best_r_val
-
 
 
 def main():
@@ -342,6 +344,28 @@ def main():
     #print(extract_word("This Is a tEsT Case. Let's see, if it. works!"))
 
     # TODO: Questions 3, 4, 5
+
+    #3.b
+    print("number of unique words, d, = ", len(X_train[0]))
+
+    #3.c 
+    print('Avg number of non-zero features = ', np.sum(X_train)/len(X_train))
+    #word appearing in greatest number of comments
+
+    #4.1
+    metrics = ["accuracy", "precision", "sensitivity", "specificty", "f1-score", "auroc"]
+    selected_C = 0
+    C_range = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
+    for m in metrics:
+        maxc = select_param_linear(X_train, Y_train, metric = m, C_range = C_range)
+        clf = LinearSVC(penalty = "l2", loss = "hinge", dual = True, c = maxc, random_state = 445) 
+        score = cv_performance(clf, X_train, Y_train, metric = m)
+        print("C = ", maxc, "is optimal under ", m, "metric, cv_performance = ", score)
+        if m == "auroc":
+            selected_C = maxc
+    
+    #4.2 
+    
 
     # Read multiclass data
     # TODO: Question 6: Apply a classifier to heldout features, and then use
