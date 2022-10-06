@@ -86,7 +86,7 @@ def extract_dictionary(df):
     word_dict = {}
     # TODO: Implement this function
     num = 0
-    for text in df['content']:
+    for text in df['text']:
         output_list = extract_word(text)
         for word in output_list:
             if word not in word_dict:
@@ -115,7 +115,7 @@ def generate_feature_matrix(df, word_dict):
     feature_matrix = np.zeros((number_of_reviews, number_of_words))
     # TODO: Implement this function
     row = 0
-    for text in df['content']:
+    for text in df['text']:
         output_list = extract_word(text)
         for word in output_list:
             if word in word_dict:
@@ -149,17 +149,17 @@ def performance(y_true, y_pred, metric="accuracy"):
     m = metrics.confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = m.ravel()
     if metric == "accuracy":
-        return (tp+tn)/(tp+fn+fp+tn)
+        return np.float64((tp+tn)/(tp+fn+fp+tn))
     if metric == "precision":
-        return tp/(tp+fp)
-    if metric == "sensitivity":
-        return tp/(tp+fn)
+        return np.float64(tp/(tp+fp))
     if metric == "specificity":
-        return tn/(tn+fp)
+        return np.float64(tn/(tn+fp))
     if metric == "f1-score": # 2*prec*sens/prec+sens
         prec = tp/(tp+fp)
         sens = tp/(tp+fn)
-        return 2*prec*sens/(prec+sens)
+        return np.float64(2*prec*sens/(prec+sens))
+    else: #metric == "sensitivity":
+        return (np.float64(tp)/(tp+fn))
 
 
 def cv_performance(clf, X, y, k=5, metric="accuracy"):
@@ -189,7 +189,7 @@ def cv_performance(clf, X, y, k=5, metric="accuracy"):
     # Put the performance of the model on each fold in the scores array
     scores = []
     strat = StratifiedKFold(n_splits=k)
-    strat.get_n_splits(X,y)
+    #strat.get_n_splits(X,y)
     for train_index, test_index in strat.split(X,y):
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = y[train_index], y[test_index]
@@ -198,8 +198,10 @@ def cv_performance(clf, X, y, k=5, metric="accuracy"):
         if metric == "auroc": #use decision_function in auroc, not predict
             y_pred = clf.decision_function(X_test)
         score = performance(y_test, y_pred, metric)
-        scores.append(score) 
-
+        #print("SCORE:", score)
+        if (score is not None):
+            scores.append(score) 
+    #print("scores =", scores)
     return np.array(scores).mean()
 
 
@@ -237,7 +239,7 @@ def select_param_linear(
     maxperf = 0
     for c in C_range:
         #clf = LinearSVC(penalty = penalty, loss = loss, dual = True, c = c, random_state = 445)
-        clf = LinearSVC(penalty = penalty, c = c)
+        clf = LinearSVC(penalty = penalty, loss = loss, dual = True, C = c, random_state = 445)
         #use performance instead of cv_performance for linear SVC?
         #-------------------------------------------------------------------------------------------------------------------
         #-------------------------------------------------------------------------------------------------------------------
@@ -272,7 +274,7 @@ def plot_weight(X, y, penalty, C_range, loss, dual):
 
     for c in C_range:
         # clf = LinearSVC(penalty = penalty, loss = loss, dual = True, c = c, random_state = 445)
-        clf = LinearSVC(penalty = penalty, c = c)
+        clf = LinearSVC(penalty = penalty, loss = loss, C = c, dual = dual, random_state = 445)
         clf.fit(X, y)
         L0_norm = 0
         for theta in clf.coef_:
@@ -321,7 +323,7 @@ def select_param_quadratic(X, y, k=5, metric="accuracy", param_range=[]):
     best_C_val, best_r_val = 0.0, 0.0
     maxperf = 0
     for c, r in param_range:
-        clf = SVC(c = c, degree = 2, r = r)
+        clf = SVC(kernel= "poly", degree=2, C=c, coef0=r, gamma="auto")
         #clf = SVC(kernel = 'poly', degree = 2, C = c,  coef0 = r, gamma = 'auto') 
         perf = cv_performance(clf, X, y, k = k, metric = metric)
         print(c, r, perf)
@@ -343,7 +345,7 @@ def main():
         dictionary_binary, fname="data/dataset.csv"
     )
 
-    #print(extract_word("This Is a tEsT Case. Let's see, if it. works!"))
+    print(extract_word("It's a test sentence. Does it look correct?"))
 
     # TODO: Questions 3, 4, 5
 
@@ -353,22 +355,25 @@ def main():
     #3.c 
     print('Avg number of non-zero features = ', np.sum(X_train)/len(X_train))
     #word appearing in greatest number of comments
-
+    most_common_word = max(dictionary_binary, key = dictionary_binary.get)
+    print("Most common word =", most_common_word)
     #4.1b
+    print("4.1b ------------------------------------------------------------------------------")
     metrics = ["accuracy", "precision", "sensitivity", "specificty", "f1-score", "auroc"]
     selected_C = 0
     C_range = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
     for m in metrics:
-        maxc = select_param_linear(X_train, Y_train, metric = m, C_range = C_range)
-        clf = LinearSVC(penalty = "l2", loss = "hinge", dual = True, c = maxc, random_state = 445) 
+        maxc = select_param_linear(X_train, Y_train, penalty = "l2", loss = "hinge", metric = m, C_range = C_range)
+        clf = LinearSVC(penalty = "l2", loss = "hinge", dual = True, C = maxc, random_state = 445) 
         score = cv_performance(clf, X_train, Y_train, metric = m)
-        print("C = ", maxc, "is optimal under ", m, "metric, cv_performance = ", score)
+        print("C = ", maxc, "is optimal under", m, "metric, cv_performance =", score)
         if m == "auroc":
             selected_C = maxc
 
     #4.1c
     #train performance on X_test and Y_Test
     clf = LinearSVC(penalty = "l2", loss = "hinge", dual = True, C = selected_C)
+    clf.fit(X_train, Y_train)
     Y_pred = clf.decision_function(X_test)
     auroc_score = performance(Y_test, Y_pred, metric = 'auroc')
     print("The C that maximizes AUROC is selected_C")
@@ -380,15 +385,16 @@ def main():
             print("The", m, "score is", score)
 
     #4.1d 
-    plot_weight(X_train, Y_train, penalty = "l2", C_range = C_range)
+    plot_weight(X_train, Y_train, penalty = "l2", loss = "hinge", dual = True, C_range = C_range)
 
     #4.1e 
     #bar coefficient vs each word, most pos and most neg, C = 0.1
+    print("4.1e------------------------------------------------------------------------")
     clf = LinearSVC(C = 0.1)
     clf.fit(X_train, Y_train)
-    arg = clf.coef_.argsort()
+    arg = clf.coef_[0].argsort()
     min_ind5 = arg[:5]
-    max_ind5 = arg[:-5:-1]
+    max_ind5 = arg[:-6:-1]
     minwords = []
     maxwords = []
 
@@ -398,7 +404,21 @@ def main():
                 minwords.append(word) 
     print("Most negative words")
     for i in range(5): #Return 5 most negative words
-        print(clf.coef_[min_ind5[i]], minwords[i])
+        print(clf.coef_[0][min_ind5[i]], minwords[i])
+
+    #plt.bar(minwords, min_ind5, color = "blue")
+    #plt.xlabel("Most Negative Words")
+    #plt.ylabel("Corresponding Coefficient")
+    #plt.show()
+
+    plt.bar(minwords, clf.coef_[0][min_ind5])
+    #plt.xscale("Words")
+    #plt.legend(["L0-norm"])
+    plt.xlabel("Most Negative Words")
+    plt.ylabel("Corresponding Coefficient")
+    plt.title("Bar Chart of most negative words.png")
+    plt.savefig("bar Chart of most negative words.png")
+    plt.close()
     
     
     for ind in max_ind5:
@@ -407,7 +427,21 @@ def main():
                 maxwords.append(word)
     print("Most positive words")
     for i in range(5): #Return 5 most positive words
-        print(clf.coef_[max_ind5[i]], maxwords[i])
+        print(clf.coef_[0][max_ind5[i]], maxwords[i])
+
+    #plt.bar(maxwords, max_ind5, color = "blue")
+    #plt.xlabel("Most Positive Words")
+    #plt.ylabel("Corresponding Coefficient")
+    #plt.show()
+        
+    plt.bar(maxwords, clf.coef_[0][max_ind5])
+    #plt.xscale("Words")
+    #plt.legend(["L0-norm"])
+    plt.xlabel("Most Positive Words")
+    plt.ylabel("Corresponding Coefficient")
+    plt.title("Bar Chart of most positive words.png")
+    plt.savefig("bar Chart of most positive words.png")
+    plt.close()
     
     #4.2 
     #Use squared hinge and l1, dual = false
@@ -417,15 +451,17 @@ def main():
     maxperf = 0 
     for c in C_range: 
         clf = LinearSVC(penalty = "l1", loss = "squared_hinge", C = c, dual = False)
+        clf.fit(X_train, Y_train)
         y_pred = clf.decision_function(X_test)
         perf = performance(Y_test, Y_pred, "auroc")
         if perf > maxperf: 
             maxc = c
             maxperf = perf
+    print("4.2a--------------------------------------------------------------------------------")
     print("C = ", maxc, "is the optimal solution")
 
     #4.2b plot weight
-    plot_weight(X_train, Y_train, penalty = "l1", C_range = C_range)
+    plot_weight(X_train, Y_train, penalty = "l1", loss = "squared_hinge", C_range = C_range, dual = False)
 
 
     #4.3a
@@ -436,6 +472,7 @@ def main():
         for r in r_range:
             cr_range.append([c,r])
     [maxc, maxr] = select_param_quadratic(X_train, Y_train, param_range = cr_range)
+    print("4.3a (i) Grid Search-------------------------------------------------")
     print("C = ", maxc, "r = ", maxr, "is part of the optimal solution")
 
     #(ii) Random Search
@@ -447,10 +484,12 @@ def main():
         lgr = random.uniform(-2, 3)
         cr_range.append([10**lgc, 10**lgr])
     [maxc, maxr] = select_param_quadratic(X_train, Y_train, param_range = cr_range)
+    print("4.3a (ii) Random Search-------------------------------------------------")
     print("C = ", maxc, "r = ", maxr, "is the optimal solution")
 
     #5.1c
-    clf = SVC(c = 0.01, class_weight = {-1: 1, 1: 10})
+    print("5.1c------------------------------------------------------------")
+    clf = SVC(C = 0.01, class_weight = {-1: 1, 1: 10})
     clf.fit(X_train, Y_train)
     Y_pred = clf.decision_function(X_test)
     perf = performance(Y_test, Y_pred, metric = "auroc")
@@ -462,16 +501,19 @@ def main():
             print("Score: ", score)
 
     #5.2a 
-    clf = SVC(c = 0.01, class_weight = 0.01)
+    print("5.2a-------------------------------------------------------")
+    clf = SVC(C = 0.01, class_weight = {-1: 1, 1 : 1})
     clf.fit(IMB_features, IMB_labels)
     Y_pred = clf.decision_function(IMB_test_features)
     perf = performance(IMB_test_labels, Y_pred, metric = "auroc")
     print("AUROC score: ", perf)
-    Y_pred = clf.predict(X_test)
+    Y_pred = clf.predict(IMB_test_features)
+    #print("Y_pred:", np.shape(Y_pred))
+    #print("IMB:", np.shape(IMB_test_labels))
     for m in metrics:
         if m != "auroc":
             perf = performance(IMB_test_labels, Y_pred, metric = m)
-            print("Score: ", score)
+        print("Score: ", score)
 
     # Read multiclass data
     # TODO: Question 6: Apply a classifier to heldout features, and then use
@@ -482,6 +524,7 @@ def main():
     multiclass_dictionary) = get_multiclass_training_data()
     
     heldout_features = get_heldout_reviews(multiclass_dictionary)
+
 
 
 if __name__ == "__main__":
